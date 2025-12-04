@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -27,7 +27,13 @@ import {
 } from 'lucide-react';
 import { Device, TimeRange } from '@/types';
 import { useChartData } from '@/lib/hooks/use-chart-data';
-import { transformToChartData, calculateEnergyPerPeriod } from '@/lib/utils/chart-aggregation';
+import {
+  transformToChartData,
+  aggregateEnergyByHour,
+  aggregateEnergyByDay,
+  aggregateEnergyByDayMonthly,
+  aggregateEnergyByMonth,
+} from '@/lib/utils/chart-aggregation';
 import { getLatestReading } from '@/lib/utils/energy-calculator';
 
 interface AnalyticCardProps {
@@ -107,9 +113,24 @@ export function AnalyticCard({
   };
 
   // Transform data for charts
-  const chartData = currentGraph.id === 'energy'
-    ? calculateEnergyPerPeriod(data)
-    : transformToChartData(data, timeRange);
+  const chartData = useMemo(() => {
+    if (currentGraph.id === 'energy') {
+      switch (timeRange) {
+        case '24h':
+          return aggregateEnergyByHour(data);
+        case '7d':
+          return aggregateEnergyByDay(data);
+        case '1m':
+          return aggregateEnergyByDayMonthly(data);
+        case '1y':
+          return aggregateEnergyByMonth(data);
+        default:
+          return [];
+      }
+    } else {
+      return transformToChartData(data, timeRange);
+    }
+  }, [data, currentGraph.id, timeRange]);
 
   const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string }; value: number }> }) => {
     if (active && payload && payload.length) {

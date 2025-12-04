@@ -114,3 +114,27 @@ export function formatChartLabel(docId: string, timeRange: '24h' | '7d' | '1m' |
       return date.toLocaleDateString();
   }
 }
+
+/**
+ * Get day of week name from Date
+ * Returns: "Mon", "Tue", "Wed", etc.
+ */
+export function getDayOfWeekName(date: Date): string {
+  return date.toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+/**
+ * Get month name from Date
+ * Returns: "Jan", "Feb", "Mar", etc.
+ */
+export function getMonthName(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short' });
+}
+
+/**
+ * Format hour as label
+ * Returns: "00:00", "01:00", etc.
+ */
+export function formatHourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`;
+}

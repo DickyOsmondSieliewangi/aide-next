@@ -1,5 +1,5 @@
 import { ChartReading, ChartDataPoint } from '@/types';
-import { parseTimestampFromDocId, formatChartLabel } from './date-parser';
+import { parseTimestampFromDocId, formatChartLabel, formatHourLabel, getDayOfWeekName, getMonthName } from './date-parser';
 
 /**
  * Aggregate readings to hourly averages
@@ -156,6 +156,393 @@ export function calculateEnergyPerPeriod(readings: ChartReading[]): ChartDataPoi
       timestamp: currReading.id,
       energy: Math.max(0, consumption), // Ensure non-negative
     });
+  }
+
+  return result;
+}
+
+/**
+ * Calculate overall average consumption from readings
+ * Used to fill missing time periods
+ */
+function calculateOverallAverageConsumption(readings: ChartReading[]): number {
+  if (readings.length === 0) return 0;
+
+  // Group by time periods and calculate average consumption per period
+  const dailyGroups: { [key: string]: ChartReading[] } = {};
+
+  readings.forEach((reading) => {
+    const date = parseTimestampFromDocId(reading.id);
+    const dayKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    if (!dailyGroups[dayKey]) {
+      dailyGroups[dayKey] = [];
+    }
+    dailyGroups[dayKey].push(reading);
+  });
+
+  // Calculate consumption for each day
+  const consumptions: number[] = [];
+  Object.values(dailyGroups).forEach(group => {
+    if (group.length > 0) {
+      const sorted = group.sort((a, b) => a.id.localeCompare(b.id));
+      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
+      if (consumption > 0) consumptions.push(consumption);
+    }
+  });
+
+  if (consumptions.length === 0) return 0;
+  return consumptions.reduce((sum, c) => sum + c, 0) / consumptions.length;
+}
+
+/**
+ * Aggregate energy readings into exactly 24 hourly consumption totals
+ * Used for 24-hour view
+ */
+export function aggregateEnergyByHour(readings: ChartReading[]): ChartDataPoint[] {
+  if (readings.length === 0) {
+    // Return 24 empty hours with 0 consumption
+    return Array.from({ length: 24 }, (_, i) => ({
+      name: formatHourLabel(i),
+      power: 0,
+      voltage: 0,
+      frequency: 0,
+      current: 0,
+      powerFactor: 0,
+      timestamp: '',
+      energy: 0,
+    }));
+  }
+
+  // Group readings by hour
+  const hourlyGroups: { [hour: number]: ChartReading[] } = {};
+
+  readings.forEach((reading) => {
+    const date = parseTimestampFromDocId(reading.id);
+    const hour = date.getHours();
+    if (!hourlyGroups[hour]) {
+      hourlyGroups[hour] = [];
+    }
+    hourlyGroups[hour].push(reading);
+  });
+
+  // Calculate overall average consumption as fallback
+  const overallAverage = calculateOverallAverageConsumption(readings);
+
+  // Generate complete 24-hour array
+  const result: ChartDataPoint[] = [];
+
+  for (let hour = 0; hour < 24; hour++) {
+    const group = hourlyGroups[hour];
+
+    if (group && group.length > 0) {
+      // Sort by timestamp
+      const sorted = group.sort((a, b) => a.id.localeCompare(b.id));
+
+      // Calculate consumption: last reading - first reading
+      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
+
+      // Calculate averages for other metrics
+      const avgPower = group.reduce((sum, r) => sum + r.power, 0) / group.length;
+      const avgVoltage = group.reduce((sum, r) => sum + r.voltage, 0) / group.length;
+      const avgFrequency = group.reduce((sum, r) => sum + r.frequency, 0) / group.length;
+      const avgCurrent = group.reduce((sum, r) => sum + r.current, 0) / group.length;
+      const avgPowerFactor = group.reduce((sum, r) => sum + r.power_factor, 0) / group.length;
+
+      result.push({
+        name: formatHourLabel(hour),
+        power: avgPower,
+        voltage: avgVoltage,
+        frequency: avgFrequency,
+        current: avgCurrent,
+        powerFactor: avgPowerFactor,
+        timestamp: sorted[0].id,
+        energy: Math.max(0, consumption), // Ensure non-negative
+      });
+    } else {
+      // Use overall average for missing hours
+      result.push({
+        name: formatHourLabel(hour),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: overallAverage,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Aggregate energy readings into exactly 7 daily consumption totals
+ * Used for 7-day (week) view
+ */
+export function aggregateEnergyByDay(readings: ChartReading[]): ChartDataPoint[] {
+  if (readings.length === 0) {
+    // Return 7 empty days with 0 consumption
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days.map(day => ({
+      name: day,
+      power: 0,
+      voltage: 0,
+      frequency: 0,
+      current: 0,
+      powerFactor: 0,
+      timestamp: '',
+      energy: 0,
+    }));
+  }
+
+  // Group readings by day
+  const dailyGroups: { [dayKey: string]: ChartReading[] } = {};
+
+  readings.forEach((reading) => {
+    const date = parseTimestampFromDocId(reading.id);
+    const dayKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+
+    if (!dailyGroups[dayKey]) {
+      dailyGroups[dayKey] = [];
+    }
+    dailyGroups[dayKey].push(reading);
+  });
+
+  // Calculate overall average consumption as fallback
+  const overallAverage = calculateOverallAverageConsumption(readings);
+
+  // Generate result for last 7 days
+  const result: ChartDataPoint[] = [];
+  const now = new Date();
+
+  for (let i = 6; i >= 0; i--) {
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() - i);
+    const dayKey = `${targetDate.getFullYear()}${String(targetDate.getMonth() + 1).padStart(2, '0')}${String(targetDate.getDate()).padStart(2, '0')}`;
+
+    const group = dailyGroups[dayKey];
+
+    if (group && group.length > 0) {
+      // Sort by timestamp
+      const sorted = group.sort((a, b) => a.id.localeCompare(b.id));
+
+      // Calculate consumption: last reading - first reading
+      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
+
+      // Calculate averages for other metrics
+      const avgPower = group.reduce((sum, r) => sum + r.power, 0) / group.length;
+      const avgVoltage = group.reduce((sum, r) => sum + r.voltage, 0) / group.length;
+      const avgFrequency = group.reduce((sum, r) => sum + r.frequency, 0) / group.length;
+      const avgCurrent = group.reduce((sum, r) => sum + r.current, 0) / group.length;
+      const avgPowerFactor = group.reduce((sum, r) => sum + r.power_factor, 0) / group.length;
+
+      result.push({
+        name: getDayOfWeekName(targetDate),
+        power: avgPower,
+        voltage: avgVoltage,
+        frequency: avgFrequency,
+        current: avgCurrent,
+        powerFactor: avgPowerFactor,
+        timestamp: sorted[0].id,
+        energy: Math.max(0, consumption), // Ensure non-negative
+      });
+    } else {
+      // Use overall average for missing days
+      result.push({
+        name: getDayOfWeekName(targetDate),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: overallAverage,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Aggregate energy readings into exactly 30 daily consumption totals
+ * Used for 1-month view
+ */
+export function aggregateEnergyByDayMonthly(readings: ChartReading[]): ChartDataPoint[] {
+  if (readings.length === 0) {
+    // Return 30 empty days with 0 consumption
+    return Array.from({ length: 30 }, (_, i) => ({
+      name: `Day ${i + 1}`,
+      power: 0,
+      voltage: 0,
+      frequency: 0,
+      current: 0,
+      powerFactor: 0,
+      timestamp: '',
+      energy: 0,
+    }));
+  }
+
+  // Group readings by day
+  const dailyGroups: { [dayKey: string]: ChartReading[] } = {};
+
+  readings.forEach((reading) => {
+    const date = parseTimestampFromDocId(reading.id);
+    const dayKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+
+    if (!dailyGroups[dayKey]) {
+      dailyGroups[dayKey] = [];
+    }
+    dailyGroups[dayKey].push(reading);
+  });
+
+  // Calculate overall average consumption as fallback
+  const overallAverage = calculateOverallAverageConsumption(readings);
+
+  // Generate result for last 30 days
+  const result: ChartDataPoint[] = [];
+  const now = new Date();
+
+  for (let i = 29; i >= 0; i--) {
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() - i);
+    const dayKey = `${targetDate.getFullYear()}${String(targetDate.getMonth() + 1).padStart(2, '0')}${String(targetDate.getDate()).padStart(2, '0')}`;
+
+    const group = dailyGroups[dayKey];
+
+    if (group && group.length > 0) {
+      // Sort by timestamp
+      const sorted = group.sort((a, b) => a.id.localeCompare(b.id));
+
+      // Calculate consumption: last reading - first reading
+      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
+
+      // Calculate averages for other metrics
+      const avgPower = group.reduce((sum, r) => sum + r.power, 0) / group.length;
+      const avgVoltage = group.reduce((sum, r) => sum + r.voltage, 0) / group.length;
+      const avgFrequency = group.reduce((sum, r) => sum + r.frequency, 0) / group.length;
+      const avgCurrent = group.reduce((sum, r) => sum + r.current, 0) / group.length;
+      const avgPowerFactor = group.reduce((sum, r) => sum + r.power_factor, 0) / group.length;
+
+      result.push({
+        name: `${getMonthName(targetDate)} ${targetDate.getDate()}`,
+        power: avgPower,
+        voltage: avgVoltage,
+        frequency: avgFrequency,
+        current: avgCurrent,
+        powerFactor: avgPowerFactor,
+        timestamp: sorted[0].id,
+        energy: Math.max(0, consumption), // Ensure non-negative
+      });
+    } else {
+      // Use overall average for missing days
+      result.push({
+        name: `${getMonthName(targetDate)} ${targetDate.getDate()}`,
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: overallAverage,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Aggregate energy readings into exactly 12 monthly consumption totals
+ * Used for 1-year view
+ * Note: Yearly readings are daily snapshots (365 readings, one per day)
+ */
+export function aggregateEnergyByMonth(readings: ChartReading[]): ChartDataPoint[] {
+  if (readings.length === 0) {
+    // Return 12 empty months with 0 consumption
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months.map(month => ({
+      name: month,
+      power: 0,
+      voltage: 0,
+      frequency: 0,
+      current: 0,
+      powerFactor: 0,
+      timestamp: '',
+      energy: 0,
+    }));
+  }
+
+  // Sort all readings by timestamp first
+  const sortedReadings = [...readings].sort((a, b) => a.id.localeCompare(b.id));
+
+  // Group readings by month
+  const monthlyGroups: { [monthKey: string]: ChartReading[] } = {};
+
+  sortedReadings.forEach((reading) => {
+    const date = parseTimestampFromDocId(reading.id);
+    const monthKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    if (!monthlyGroups[monthKey]) {
+      monthlyGroups[monthKey] = [];
+    }
+    monthlyGroups[monthKey].push(reading);
+  });
+
+  // Calculate overall average consumption as fallback
+  const overallAverage = calculateOverallAverageConsumption(readings);
+
+  // Generate result for last 12 months
+  const result: ChartDataPoint[] = [];
+  const now = new Date();
+
+  for (let i = 11; i >= 0; i--) {
+    const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${targetDate.getFullYear()}${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const group = monthlyGroups[monthKey];
+
+    if (group && group.length > 0) {
+      // For yearly data, readings are daily snapshots
+      // Calculate total consumption by summing daily deltas
+      let monthlyConsumption = 0;
+
+      for (let j = 1; j < group.length; j++) {
+        const dailyConsumption = group[j].energy - group[j - 1].energy;
+        monthlyConsumption += Math.max(0, dailyConsumption);
+      }
+
+      // Calculate averages for other metrics
+      const avgPower = group.reduce((sum, r) => sum + r.power, 0) / group.length;
+      const avgVoltage = group.reduce((sum, r) => sum + r.voltage, 0) / group.length;
+      const avgFrequency = group.reduce((sum, r) => sum + r.frequency, 0) / group.length;
+      const avgCurrent = group.reduce((sum, r) => sum + r.current, 0) / group.length;
+      const avgPowerFactor = group.reduce((sum, r) => sum + r.power_factor, 0) / group.length;
+
+      result.push({
+        name: getMonthName(targetDate),
+        power: avgPower,
+        voltage: avgVoltage,
+        frequency: avgFrequency,
+        current: avgCurrent,
+        powerFactor: avgPowerFactor,
+        timestamp: group[0].id,
+        energy: monthlyConsumption,
+      });
+    } else {
+      // Use overall average for missing months
+      result.push({
+        name: getMonthName(targetDate),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: overallAverage,
+      });
+    }
   }
 
   return result;
