@@ -1,9 +1,9 @@
 /**
- * Firebase RTDB functions for managing Telegram chat IDs
+ * Firebase Firestore functions for managing Telegram chat IDs
  */
 
-import { ref, get, set, update } from 'firebase/database';
-import { db } from './config';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { firestore } from './config';
 
 /**
  * Save or update an active Telegram chat ID
@@ -14,16 +14,38 @@ export async function saveActiveChatId(
   firstName?: string
 ): Promise<void> {
   try {
-    const chatRef = ref(db, `telegram/active_chats/${chatId}`);
+    const chatDocRef = doc(firestore, 'telegram/active_chats');
     const now = Date.now();
 
-    await set(chatRef, {
-      chatId: chatId,
-      username: username || null,
-      firstName: firstName || null,
-      lastActive: now,
-      addedAt: now,
-    });
+    // Get current document
+    const chatDoc = await getDoc(chatDocRef);
+
+    if (!chatDoc.exists()) {
+      // Create new document
+      await setDoc(chatDocRef, {
+        chats: {
+          [chatId]: {
+            chatId: chatId,
+            username: username || null,
+            firstName: firstName || null,
+            lastActive: now,
+            addedAt: now,
+          },
+        },
+        last_update_id: 0,
+      });
+    } else {
+      // Update existing document
+      await updateDoc(chatDocRef, {
+        [`chats.${chatId}`]: {
+          chatId: chatId,
+          username: username || null,
+          firstName: firstName || null,
+          lastActive: now,
+          addedAt: chatDoc.data()?.chats?.[chatId]?.addedAt || now,
+        },
+      });
+    }
   } catch (error) {
     console.error(`Error saving chat ID ${chatId}:`, error);
     throw error;
@@ -35,14 +57,15 @@ export async function saveActiveChatId(
  */
 export async function getAllActiveChatIds(): Promise<number[]> {
   try {
-    const chatsRef = ref(db, 'telegram/active_chats');
-    const snapshot = await get(chatsRef);
+    const chatDocRef = doc(firestore, 'telegram/active_chats');
+    const chatDoc = await getDoc(chatDocRef);
 
-    if (!snapshot.exists()) {
+    if (!chatDoc.exists()) {
       return [];
     }
 
-    const chats = snapshot.val();
+    const data = chatDoc.data();
+    const chats = data?.chats || {};
     return Object.keys(chats).map((chatId) => parseInt(chatId, 10));
   } catch (error) {
     console.error('Error getting active chat IDs:', error);
@@ -55,14 +78,14 @@ export async function getAllActiveChatIds(): Promise<number[]> {
  */
 export async function getLastUpdateId(): Promise<number> {
   try {
-    const updateIdRef = ref(db, 'telegram/last_update_id');
-    const snapshot = await get(updateIdRef);
+    const chatDocRef = doc(firestore, 'telegram/active_chats');
+    const chatDoc = await getDoc(chatDocRef);
 
-    if (!snapshot.exists()) {
+    if (!chatDoc.exists()) {
       return 0;
     }
 
-    return snapshot.val();
+    return chatDoc.data()?.last_update_id || 0;
   } catch (error) {
     console.error('Error getting last update ID:', error);
     return 0;
@@ -74,8 +97,23 @@ export async function getLastUpdateId(): Promise<number> {
  */
 export async function setLastUpdateId(updateId: number): Promise<void> {
   try {
-    const updateIdRef = ref(db, 'telegram/last_update_id');
-    await set(updateIdRef, updateId);
+    const chatDocRef = doc(firestore, 'telegram/active_chats');
+
+    // Check if document exists
+    const chatDoc = await getDoc(chatDocRef);
+
+    if (!chatDoc.exists()) {
+      // Create with just last_update_id
+      await setDoc(chatDocRef, {
+        chats: {},
+        last_update_id: updateId,
+      });
+    } else {
+      // Update existing
+      await updateDoc(chatDocRef, {
+        last_update_id: updateId,
+      });
+    }
   } catch (error) {
     console.error('Error setting last update ID:', error);
     throw error;
@@ -88,14 +126,15 @@ export async function setLastUpdateId(updateId: number): Promise<void> {
  */
 export async function removeInactiveChats(daysOld: number = 90): Promise<number> {
   try {
-    const chatsRef = ref(db, 'telegram/active_chats');
-    const snapshot = await get(chatsRef);
+    const chatDocRef = doc(firestore, 'telegram/active_chats');
+    const chatDoc = await getDoc(chatDocRef);
 
-    if (!snapshot.exists()) {
+    if (!chatDoc.exists()) {
       return 0;
     }
 
-    const chats = snapshot.val();
+    const data = chatDoc.data();
+    const chats = data?.chats || {};
     const cutoffTime = Date.now() - daysOld * 24 * 60 * 60 * 1000;
     let removedCount = 0;
 
@@ -104,13 +143,13 @@ export async function removeInactiveChats(daysOld: number = 90): Promise<number>
     Object.keys(chats).forEach((chatId) => {
       const chat = chats[chatId];
       if (chat.lastActive < cutoffTime) {
-        updates[`telegram/active_chats/${chatId}`] = null;
+        updates[`chats.${chatId}`] = null;
         removedCount++;
       }
     });
 
     if (removedCount > 0) {
-      await update(ref(db), updates);
+      await updateDoc(chatDocRef, updates);
     }
 
     return removedCount;

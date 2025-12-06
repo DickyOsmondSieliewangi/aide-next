@@ -9,7 +9,7 @@ import {
   deleteDevice as deleteDeviceRTDB,
   setEnergyLimit as setEnergyLimitRTDB,
   toggleDevice as toggleDeviceRTDB,
-} from '@/lib/firebase/rtdb';
+} from '@/lib/firebase/firestore';
 import { Device } from '@/types';
 
 // Global cache for devices

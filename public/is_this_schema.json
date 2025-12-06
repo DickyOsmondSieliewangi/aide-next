@@ -1,0 +1,59 @@
+{
+  "item-data": {
+    "holder": {},
+    "item001": {},
+    "item002": {},
+    "item003": {
+      "energyLimit": 0,
+      "isOn": true,
+      "last_updated": "2025-12-06T12:21:27Z",
+      "user_ids": ["", "UxHdoxgzziduRWTWXCNSmziftfp1"],
+      "daily": {
+        "20251204T073554": {
+          "current": 0,
+          "energy": 0.62,
+          "frequency": 49.99,
+          "power": 0,
+          "power_factor": 0.01,
+          "voltage": 233.63
+        },
+        "20251204T142054": {
+          "current": 0,
+          "energy": 0,
+          "frequency": 0,
+          "power": 0,
+          "power_factor": 0,
+          "voltage": 0
+        },
+        "20251204T142555": {},
+        "20251204T143054": {},
+        "20251204T143554": {},
+        "20251204T144055": {},
+        "20251204T144555": {},
+        "20251204T145054": {},
+        "20251204T145554": {},
+        "20251204T150055": {},
+        "20251204T150554": {},
+        "20251204T151054": {},
+        "20251204T151555": {}
+      }
+    }
+  },
+  "user-data": {
+    "0000000001": {
+      "devices": {
+        "item001": "system 01",
+        "item002": "lampu"
+      },
+      "email": "john@example.com",
+      "username": "john_doe",
+      "userpassword": "password123"
+    },
+    "UxHdoxgzziduRWTWXCNSmziftfp1": {
+      "devices": {},
+      "email": "",
+      "username": "",
+      "userpassword": ""
+    }
+  }
+}

@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User data - users can only read/write their own
+    match /user-data/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Item data - users can read items they have access to
+    match /item-data/{itemId} {
+      allow read: if request.auth != null &&
+                     request.auth.uid in resource.data.user_ids;
+      allow write: if request.auth != null &&
+                      request.auth.uid in resource.data.user_ids;
+
+      // Daily readings subcollection
+      match /daily/{timestamp} {
+        allow read: if request.auth != null &&
+                       request.auth.uid in get(/databases/$(database)/documents/item-data/$(itemId)).data.user_ids;
+        // Only allow writes from server (via admin SDK)
+        allow write: if false;
+      }
+    }
+
+    // Telegram data - only server access
+    match /telegram/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

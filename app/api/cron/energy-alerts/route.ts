@@ -4,8 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ref, get } from 'firebase/database';
-import { db } from '@/lib/firebase/config';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { firestore } from '@/lib/firebase/config';
 import { sendEnergyAlert } from '@/lib/telegram/telegram';
 import { getAllActiveChatIds } from '@/lib/firebase/telegram-chats';
 
@@ -16,7 +16,7 @@ interface DeviceData {
   name: string;
   energyLimit: number;
   isOn: boolean;
-  user_ids?: Record<string, boolean>;
+  user_ids?: string[];
 }
 
 interface ReadingData {
@@ -60,11 +60,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get all devices from Firebase
-    const devicesRef = ref(db, 'devices');
-    const devicesSnapshot = await get(devicesRef);
+    // Get all devices from Firestore
+    const devicesRef = collection(firestore, 'item-data');
+    const devicesSnapshot = await getDocs(devicesRef);
 
-    if (!devicesSnapshot.exists()) {
+    if (devicesSnapshot.empty) {
       return NextResponse.json({
         success: true,
         message: 'No devices found',
@@ -72,14 +72,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const devices = devicesSnapshot.val();
     let devicesChecked = 0;
     let alertsSent = 0;
     const errors: string[] = [];
 
     // Process each device
-    for (const [deviceId, deviceData] of Object.entries(devices)) {
-      const device = deviceData as DeviceData;
+    for (const deviceDoc of devicesSnapshot.docs) {
+      const deviceId = deviceDoc.id;
+      const device = deviceDoc.data() as DeviceData;
       devicesChecked++;
 
       // Skip devices without energy limit set
@@ -89,25 +89,22 @@ export async function GET(request: NextRequest) {
 
       try {
         // Get latest daily reading for this device
-        const readingsRef = ref(db, `readings_daily/${deviceId}`);
-        const readingsSnapshot = await get(readingsRef);
+        const dailyRef = collection(firestore, `item-data/${deviceId}/daily`);
+        const readingsSnapshot = await getDocs(dailyRef);
 
-        if (!readingsSnapshot.exists()) {
+        if (readingsSnapshot.empty) {
           console.log(`No readings found for device ${deviceId}`);
           continue;
         }
 
-        const readings = readingsSnapshot.val();
+        // Sort by document ID (timestamp) in descending order to get latest
+        const sortedDocs = readingsSnapshot.docs.sort((a, b) => {
+          if (a.id > b.id) return -1;
+          if (a.id < b.id) return 1;
+          return 0;
+        });
 
-        // Get the latest reading (sorted by timestamp)
-        const timestamps = Object.keys(readings).sort((a, b) => parseInt(b) - parseInt(a));
-
-        if (timestamps.length === 0) {
-          continue;
-        }
-
-        const latestTimestamp = timestamps[0];
-        const latestReading = readings[latestTimestamp] as ReadingData;
+        const latestReading = sortedDocs[0].data() as ReadingData;
 
         // Check if energy consumption exceeds limit
         if (latestReading.energy > device.energyLimit) {
@@ -116,21 +113,17 @@ export async function GET(request: NextRequest) {
           // Get custom device names from users who own this device
           let deviceDisplayName = device.name;
 
-          if (device.user_ids) {
-            const userIds = Object.keys(device.user_ids);
-
+          if (device.user_ids && device.user_ids.length > 0) {
             // Try to get custom name from first user
-            if (userIds.length > 0) {
-              const userId = userIds[0];
-              const userRef = ref(db, `users/${userId}`);
-              const userSnapshot = await get(userRef);
+            const userId = device.user_ids[0];
+            const userRef = doc(firestore, `user-data/${userId}`);
+            const userSnapshot = await getDoc(userRef);
 
-              if (userSnapshot.exists()) {
-                const userData = userSnapshot.val();
-                const customName = userData.devices?.[deviceId];
-                if (customName) {
-                  deviceDisplayName = customName;
-                }
+            if (userSnapshot.exists()) {
+              const userData = userSnapshot.data();
+              const customName = userData?.devices?.[deviceId];
+              if (customName) {
+                deviceDisplayName = customName;
               }
             }
           }

@@ -4,8 +4,8 @@ import {
   signOut,
   User,
 } from 'firebase/auth';
-import { ref, set, get } from 'firebase/database';
-import { auth, db } from './config';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, firestore } from './config';
 import { UserProfile } from '@/types';
 
 /**
@@ -21,9 +21,9 @@ export async function signUpWithEmail(
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
-    // Create RTDB document for user
-    const userRef = ref(db, `users/${user.uid}`);
-    await set(userRef, {
+    // Create Firestore document for user
+    const userRef = doc(firestore, `user-data/${user.uid}`);
+    await setDoc(userRef, {
       email: email,
       username: username,
       devices: {},
@@ -34,18 +34,21 @@ export async function signUpWithEmail(
       email: email,
       username: username,
     };
-  } catch (error: any) {
+  } catch (error) {
     // Provide more specific error messages
-    if (error.code === 'auth/email-already-in-use') {
-      throw new Error('An account with this email already exists. Please sign in instead.');
-    } else if (error.code === 'auth/invalid-email') {
-      throw new Error('Invalid email format. Please check your email.');
-    } else if (error.code === 'auth/weak-password') {
-      throw new Error('Password is too weak. Please use at least 6 characters.');
-    } else if (error.code === 'auth/operation-not-allowed') {
-      throw new Error('Email/password accounts are not enabled. Contact support.');
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('An account with this email already exists. Please sign in instead.');
+      } else if (error.code === 'auth/invalid-email') {
+        throw new Error('Invalid email format. Please check your email.');
+      } else if (error.code === 'auth/weak-password') {
+        throw new Error('Password is too weak. Please use at least 6 characters.');
+      } else if (error.code === 'auth/operation-not-allowed') {
+        throw new Error('Email/password accounts are not enabled. Contact support.');
+      }
     }
-    throw new Error(error.message || 'Failed to sign up');
+    const message = error instanceof Error ? error.message : 'Failed to sign up';
+    throw new Error(message);
   }
 }
 
@@ -61,37 +64,40 @@ export async function signInWithEmail(
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
-    // Fetch user document from RTDB
-    const userRef = ref(db, `users/${user.uid}`);
-    const userSnapshot = await get(userRef);
+    // Fetch user document from Firestore
+    const userRef = doc(firestore, `user-data/${user.uid}`);
+    const userSnapshot = await getDoc(userRef);
 
     if (!userSnapshot.exists()) {
       throw new Error('User profile not found');
     }
 
-    const userData = userSnapshot.val();
+    const userData = userSnapshot.data();
 
     return {
       userId: user.uid,
       email: userData.email,
       username: userData.username,
     };
-  } catch (error: any) {
+  } catch (error) {
     // Provide more specific error messages
-    if (error.code === 'auth/invalid-credential') {
-      throw new Error('Invalid email or password. Please check your credentials.');
-    } else if (error.code === 'auth/user-not-found') {
-      throw new Error('No account found with this email. Please sign up first.');
-    } else if (error.code === 'auth/wrong-password') {
-      throw new Error('Incorrect password. Please try again.');
-    } else if (error.code === 'auth/invalid-email') {
-      throw new Error('Invalid email format. Please check your email.');
-    } else if (error.code === 'auth/user-disabled') {
-      throw new Error('This account has been disabled. Contact support.');
-    } else if (error.code === 'auth/too-many-requests') {
-      throw new Error('Too many failed login attempts. Please try again later.');
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'auth/invalid-credential') {
+        throw new Error('Invalid email or password. Please check your credentials.');
+      } else if (error.code === 'auth/user-not-found') {
+        throw new Error('No account found with this email. Please sign up first.');
+      } else if (error.code === 'auth/wrong-password') {
+        throw new Error('Incorrect password. Please try again.');
+      } else if (error.code === 'auth/invalid-email') {
+        throw new Error('Invalid email format. Please check your email.');
+      } else if (error.code === 'auth/user-disabled') {
+        throw new Error('This account has been disabled. Contact support.');
+      } else if (error.code === 'auth/too-many-requests') {
+        throw new Error('Too many failed login attempts. Please try again later.');
+      }
     }
-    throw new Error(error.message || 'Failed to sign in');
+    const message = error instanceof Error ? error.message : 'Failed to sign in';
+    throw new Error(message);
   }
 }
 
@@ -101,8 +107,9 @@ export async function signInWithEmail(
 export async function signOutUser(): Promise<void> {
   try {
     await signOut(auth);
-  } catch (error: any) {
-    throw new Error(error.message || 'Failed to sign out');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to sign out';
+    throw new Error(message);
   }
 }
 
