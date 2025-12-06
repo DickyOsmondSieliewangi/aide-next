@@ -3,7 +3,8 @@
     "allow": [
       "Bash(bun lint:*)",
       "Bash(bun run build:*)",
-      "Bash(bun run lint:*)"
+      "Bash(bun run lint:*)",
+      "Bash(tasklist:*)"
     ],
     "deny": [],
     "ask": []

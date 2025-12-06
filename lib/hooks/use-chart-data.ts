@@ -3,9 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   subscribeToDailyReadings,
-  subscribeToWeeklyReadings,
-  subscribeToYearlyReadings,
-} from '@/lib/firebase/rtdb';
+} from '@/lib/firebase/firestore';
 import { ChartReading, TimeRange } from '@/types';
 import {
   aggregateToHourlyAverages,
@@ -95,20 +93,20 @@ export function useChartData(deviceId: string | null, timeRange: TimeRange) {
 
     switch (timeRange) {
       case '24h':
-        // 288 readings (every 15 minutes)
+        // 288 readings (every 15 minutes for 24 hours)
         unsubscribe = subscribeToDailyReadings(deviceId, 288, handleUpdate, handleError);
         break;
       case '7d':
         // 2016 readings (15-min intervals × 7 days) → aggregated to 168 hourly
-        unsubscribe = subscribeToWeeklyReadings(deviceId, 2016, handleUpdate, handleError);
+        unsubscribe = subscribeToDailyReadings(deviceId, 2016, handleUpdate, handleError);
         break;
       case '1m':
         // 8640 readings (15-min intervals × 30 days) → aggregated to 30 daily
-        unsubscribe = subscribeToWeeklyReadings(deviceId, 8640, handleUpdate, handleError);
+        unsubscribe = subscribeToDailyReadings(deviceId, 8640, handleUpdate, handleError);
         break;
       case '1y':
-        // 365 daily readings
-        unsubscribe = subscribeToYearlyReadings(deviceId, 365, handleUpdate, handleError);
+        // 35040 readings (15-min intervals × 365 days) → aggregated to monthly
+        unsubscribe = subscribeToDailyReadings(deviceId, 35040, handleUpdate, handleError);
         break;
       default:
         unsubscribe = subscribeToDailyReadings(deviceId, 288, handleUpdate, handleError);

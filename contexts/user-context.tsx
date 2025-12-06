@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { ref, get } from 'firebase/database';
-import { auth, db } from '@/lib/firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, firestore } from '@/lib/firebase/config';
 import { signUpWithEmail, signInWithEmail, signOutUser } from '@/lib/firebase/auth';
 import { UserProfile } from '@/types';
 
@@ -31,22 +31,23 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        // Fetch user profile from RTDB
+        // Fetch user profile from Firestore
         try {
-          const userRef = ref(db, `users/${firebaseUser.uid}`);
-          const userSnapshot = await get(userRef);
+          const userRef = doc(firestore, `user-data/${firebaseUser.uid}`);
+          const userSnapshot = await getDoc(userRef);
 
           if (userSnapshot.exists()) {
-            const userData = userSnapshot.val();
+            const userData = userSnapshot.data();
             setUserProfile({
               userId: firebaseUser.uid,
               email: userData.email,
               username: userData.username,
             });
           }
-        } catch (err: any) {
+        } catch (err) {
           console.error('Error fetching user profile:', err);
-          setError(err.message);
+          const message = err instanceof Error ? err.message : 'Failed to fetch user profile';
+          setError(message);
         }
       } else {
         setUserProfile(null);
@@ -64,8 +65,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const profile = await signInWithEmail(email, password);
       setUserProfile(profile);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sign in';
+      setError(message);
       throw err;
     } finally {
       setLoading(false);
@@ -78,8 +80,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const profile = await signUpWithEmail(email, password, username);
       setUserProfile(profile);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sign up';
+      setError(message);
       throw err;
     } finally {
       setLoading(false);
@@ -92,8 +95,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       await signOutUser();
       setUser(null);
       setUserProfile(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sign out';
+      setError(message);
       throw err;
     }
   };
