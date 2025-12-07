@@ -4,12 +4,17 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   subscribeToUserDevices,
   getDeviceMetadata,
-  addDevice as addDeviceRTDB,
-  updateDevice as updateDeviceRTDB,
-  deleteDevice as deleteDeviceRTDB,
-  setEnergyLimit as setEnergyLimitRTDB,
-  toggleDevice as toggleDeviceRTDB,
+  addDevice as addDeviceFS,
+  updateDevice as updateDeviceFS,
+  deleteDevice as deleteDeviceFS,
+  setEnergyLimit as setEnergyLimitFS,
+  toggleDevice as toggleDeviceFS,
 } from '@/lib/firebase/firestore';
+
+import {
+  setEnergyLimitRTDB,
+  toggleDeviceRTDB,
+} from '@/lib/firebase/rtdb'
 import { Device } from '@/types';
 
 // Global cache for devices
@@ -100,7 +105,7 @@ export function useDevices(userId: string | null) {
   const addDevice = useCallback(
     async (deviceId: string, customName: string) => {
       if (!userId) throw new Error('User not authenticated');
-      await addDeviceRTDB(userId, deviceId, customName);
+      await addDeviceFS(userId, deviceId, customName);
     },
     [userId]
   );
@@ -108,7 +113,7 @@ export function useDevices(userId: string | null) {
   const updateDevice = useCallback(
     async (deviceId: string, newName: string) => {
       if (!userId) throw new Error('User not authenticated');
-      await updateDeviceRTDB(userId, deviceId, newName);
+      await updateDeviceFS(userId, deviceId, newName);
     },
     [userId]
   );
@@ -116,17 +121,19 @@ export function useDevices(userId: string | null) {
   const deleteDevice = useCallback(
     async (deviceId: string) => {
       if (!userId) throw new Error('User not authenticated');
-      await deleteDeviceRTDB(userId, deviceId);
+      await deleteDeviceFS(userId, deviceId);
     },
     [userId]
   );
 
   const setEnergyLimit = useCallback(async (deviceId: string, limit: number) => {
+    await setEnergyLimitFS(deviceId, limit);
     await setEnergyLimitRTDB(deviceId, limit);
   }, []);
 
   const toggleDevice = useCallback(async (deviceId: string, newState: boolean) => {
-    await toggleDeviceRTDB(deviceId, newState);
+    await toggleDeviceFS(deviceId, newState);
+    await toggleDeviceRTDB(deviceId,newState);
 
     // Update the cached device immediately
     if (cachedDevices) {
