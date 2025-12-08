@@ -34,8 +34,13 @@ export default function LoginPage() {
       const loadingToast = toast.loading('Signing in...');
       await login(email, password);
       toast.dismiss(loadingToast);
-      toast.success('Welcome back!');
-      router.push('/home');
+      toast.success('Welcome back!', {
+        duration: 2000,
+      });
+      // Small delay to allow toast to display before navigation
+      setTimeout(() => {
+        router.push('/home');
+      }, 500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to login';
       setError(errorMessage);

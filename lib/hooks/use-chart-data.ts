@@ -5,10 +5,6 @@ import {
   subscribeToDailyReadings,
 } from '@/lib/firebase/firestore';
 import { ChartReading, TimeRange } from '@/types';
-import {
-  aggregateToHourlyAverages,
-  aggregateToDailyAverages,
-} from '@/lib/utils/chart-aggregation';
 
 // Global cache for chart data
 const chartDataCache: {
@@ -37,8 +33,6 @@ export function useChartData(deviceId: string | null, timeRange: TimeRange) {
       setLoading(false);
       return;
     }
-
-    const cacheKey = `${deviceId}-${timeRange}`;
 
     // Check if we have cached data
     if (chartDataCache[deviceId]?.[timeRange]) {
@@ -72,17 +66,10 @@ export function useChartData(deviceId: string | null, timeRange: TimeRange) {
     let unsubscribe: () => void;
 
     const handleUpdate = (readings: ChartReading[]) => {
-      let processedReadings = readings;
-
-      // Apply aggregation based on time range
-      if (timeRange === '7d') {
-        processedReadings = aggregateToHourlyAverages(readings);
-      } else if (timeRange === '1m') {
-        processedReadings = aggregateToDailyAverages(readings);
-      }
-
-      chartDataCache[deviceId][timeRange] = processedReadings;
-      setData(processedReadings);
+      // Return raw readings for energy calculations
+      // Non-energy graphs will aggregate in transformToChartData
+      chartDataCache[deviceId][timeRange] = readings;
+      setData(readings);
       setLoading(false);
     };
 

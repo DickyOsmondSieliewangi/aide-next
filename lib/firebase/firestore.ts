@@ -40,6 +40,32 @@ export function subscribeToUserDevices(
 }
 
 /**
+ * Subscribe to a specific device's metadata in real-time
+ */
+export function subscribeToDeviceMetadata(
+  itemId: string,
+  onUpdate: (metadata: Record<string, unknown>) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  const itemDocRef = doc(firestore, `item-data/${itemId}`);
+
+  return onSnapshot(
+    itemDocRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onUpdate({});
+        return;
+      }
+      const metadata = snapshot.data();
+      onUpdate(metadata);
+    },
+    (error) => {
+      onError(new Error(error.message || 'Failed to fetch device metadata'));
+    }
+  );
+}
+
+/**
  * Subscribe to daily readings for a device
  */
 export function subscribeToDailyReadings(

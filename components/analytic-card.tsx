@@ -73,6 +73,7 @@ export function AnalyticCard({
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [isToggling, setIsToggling] = useState(false);
   const [optimisticState, setOptimisticState] = useState<boolean | null>(null);
+  const [displayedEnergyLimit, setDisplayedEnergyLimit] = useState(device.energyLimit);
 
   const { data, loading, error, refresh } = useChartData(device.id, timeRange);
 
@@ -81,6 +82,11 @@ export function AnalyticCard({
 
   // Use optimistic state if available, otherwise use device state
   const displayState = optimisticState !== null ? optimisticState : device.isOn;
+
+  // Update displayed energy limit when device prop changes
+  useEffect(() => {
+    setDisplayedEnergyLimit(device.energyLimit);
+  }, [device.energyLimit]);
 
   // Clear optimistic state when device prop updates to match it
   useEffect(() => {
@@ -293,11 +299,11 @@ export function AnalyticCard({
       )}
 
       {/* Energy Limit Warning */}
-      {device.energyLimit > 0 && latestReading && latestReading.energy >= device.energyLimit && (
+      {displayedEnergyLimit > 0 && latestReading && latestReading.energy >= displayedEnergyLimit && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-red-600" />
           <p className="text-sm text-red-800">
-            Energy limit exceeded: {latestReading.energy.toFixed(2)} / {device.energyLimit} kWh
+            Energy limit exceeded: {latestReading.energy.toFixed(2)} / {displayedEnergyLimit} kWh
           </p>
         </div>
       )}

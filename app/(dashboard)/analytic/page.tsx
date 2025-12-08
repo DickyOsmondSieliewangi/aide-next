@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useDevices } from '@/lib/hooks/use-devices';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,22 @@ export default function AnalyticPage() {
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+
+  // Sync selectedDevice with updated device data from Firebase
+  useEffect(() => {
+    if (selectedDevice) {
+      const updatedDevice = devices.find(d => d.id === selectedDevice.id);
+      if (updatedDevice) {
+        // Update if any property changed, but compare by reference to avoid infinite loop
+        if (updatedDevice.energyLimit !== selectedDevice.energyLimit ||
+            updatedDevice.name !== selectedDevice.name ||
+            updatedDevice.isOn !== selectedDevice.isOn) {
+          setSelectedDevice(updatedDevice);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices]);
 
   const handleAddDevice = async (deviceId: string, deviceName: string) => {
     try {

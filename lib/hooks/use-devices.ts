@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   subscribeToUserDevices,
+  subscribeToDeviceMetadata,
   getDeviceMetadata,
   addDevice as addDeviceFS,
   updateDevice as updateDeviceFS,
@@ -20,6 +21,7 @@ import { Device } from '@/types';
 // Global cache for devices
 let cachedDevices: Device[] | null = null;
 let activeDeviceSubscription: (() => void) | null = null;
+const deviceMetadataSubscriptions: Map<string, () => void> = new Map();
 let subscriberCount = 0;
 
 export function useDevices(userId: string | null) {
@@ -56,6 +58,15 @@ export function useDevices(userId: string | null) {
         const deviceIds = Object.keys(deviceMap);
         const deviceDetails: Device[] = [];
 
+        // Clean up old metadata subscriptions for removed devices
+        const currentDeviceIds = new Set(deviceIds);
+        for (const [subscribedId, unsubscribe] of deviceMetadataSubscriptions.entries()) {
+          if (!currentDeviceIds.has(subscribedId)) {
+            unsubscribe();
+            deviceMetadataSubscriptions.delete(subscribedId);
+          }
+        }
+
         for (const deviceId of deviceIds) {
           try {
             const metadata = await getDeviceMetadata(deviceId);
@@ -67,6 +78,33 @@ export function useDevices(userId: string | null) {
               energyLimit: metadata.energyLimit || 0,
               last_updated: metadata.last_updated,
             });
+
+            // Subscribe to metadata changes if not already subscribed
+            if (!deviceMetadataSubscriptions.has(deviceId)) {
+              const unsubscribe = subscribeToDeviceMetadata(
+                deviceId,
+                (updatedMetadata) => {
+                  // Update the cached device when metadata changes
+                  if (cachedDevices) {
+                    cachedDevices = cachedDevices.map(device =>
+                      device.id === deviceId
+                        ? {
+                            ...device,
+                            isOn: typeof updatedMetadata.isOn === 'boolean' ? updatedMetadata.isOn : false,
+                            energyLimit: typeof updatedMetadata.energyLimit === 'number' ? updatedMetadata.energyLimit : 0,
+                            last_updated: updatedMetadata.last_updated as string | undefined,
+                          }
+                        : device
+                    );
+                    setDevices([...cachedDevices]);
+                  }
+                },
+                (err) => {
+                  console.error(`Error subscribing to device ${deviceId} metadata:`, err);
+                }
+              );
+              deviceMetadataSubscriptions.set(deviceId, unsubscribe);
+            }
           } catch (err) {
             console.error(`Error fetching device ${deviceId}:`, err);
           }
@@ -75,8 +113,9 @@ export function useDevices(userId: string | null) {
         cachedDevices = deviceDetails;
         setDevices(deviceDetails);
         setLoading(false);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch device details';
+        setError(errorMessage);
         setLoading(false);
       }
     };
@@ -94,9 +133,16 @@ export function useDevices(userId: string | null) {
 
     return () => {
       subscriberCount--;
-      if (subscriberCount === 0 && activeDeviceSubscription) {
-        activeDeviceSubscription();
-        activeDeviceSubscription = null;
+      if (subscriberCount === 0) {
+        if (activeDeviceSubscription) {
+          activeDeviceSubscription();
+          activeDeviceSubscription = null;
+        }
+        // Unsubscribe from all device metadata subscriptions
+        for (const unsubscribe of deviceMetadataSubscriptions.values()) {
+          unsubscribe();
+        }
+        deviceMetadataSubscriptions.clear();
         cachedDevices = null;
       }
     };

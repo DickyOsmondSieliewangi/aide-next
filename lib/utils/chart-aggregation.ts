@@ -106,7 +106,27 @@ export function transformToChartData(
   readings: ChartReading[],
   timeRange: '24h' | '7d' | '1m' | '1y'
 ): ChartDataPoint[] {
-  return readings.map((reading) => ({
+  // Aggregate based on time range for non-energy metrics
+  let processedReadings: ChartReading[];
+
+  switch (timeRange) {
+    case '7d':
+      processedReadings = aggregateToHourlyAverages(readings);
+      break;
+    case '1m':
+      processedReadings = aggregateToDailyAverages(readings);
+      break;
+    case '1y':
+      // Yearly view can stay as raw daily readings
+      processedReadings = readings;
+      break;
+    default:
+      // 24h view uses raw 15-minute readings
+      processedReadings = readings;
+  }
+
+  // Transform to chart data points
+  return processedReadings.map((reading) => ({
     name: formatChartLabel(reading.id, timeRange),
     power: reading.power,
     voltage: reading.voltage,
