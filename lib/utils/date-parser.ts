@@ -138,3 +138,39 @@ export function getMonthName(date: Date): string {
 export function formatHourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`;
 }
+
+/**
+ * Format date and time for tooltips
+ * Returns: "Dec 10, 2025 15:36"
+ */
+export function formatFullDateTime(date: Date): string {
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
+ * Format time for rolling window X-axis labels
+ * Returns: "15:36" (24-hour format)
+ */
+export function formatTimeForRollingWindow(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Get rolling window boundaries (24 hours from now backwards)
+ */
+export function getRollingWindowBoundaries(now: Date = new Date()): { start: Date; end: Date } {
+  const end = new Date(now);
+  const start = new Date(now);
+  start.setHours(start.getHours() - 24);
+
+  return { start, end };
+}

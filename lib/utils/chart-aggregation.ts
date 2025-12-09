@@ -1,5 +1,5 @@
 import { ChartReading, ChartDataPoint } from '@/types';
-import { parseTimestampFromDocId, formatChartLabel, formatHourLabel, getDayOfWeekName, getMonthName } from './date-parser';
+import { parseTimestampFromDocId, formatChartLabel, formatHourLabel, getDayOfWeekName, getMonthName, formatTimeForRollingWindow } from './date-parser';
 
 /**
  * Aggregate readings to hourly averages
@@ -110,6 +110,27 @@ export function transformToChartData(
   let processedReadings: ChartReading[];
 
   switch (timeRange) {
+    case '24h':
+      // Filter to rolling 24-hour window from latest data
+      if (readings.length === 0) {
+        processedReadings = [];
+      } else {
+        // Find latest timestamp
+        const sortedReadings = [...readings].sort((a, b) => b.id.localeCompare(a.id));
+        const latestReading = sortedReadings[0];
+        const endTime = parseTimestampFromDocId(latestReading.id);
+
+        // Calculate start time (24 hours before latest data)
+        const startTime = new Date(endTime);
+        startTime.setHours(startTime.getHours() - 24);
+
+        // Filter to rolling window - only actual data points
+        processedReadings = readings.filter(reading => {
+          const readingTime = parseTimestampFromDocId(reading.id);
+          return readingTime >= startTime && readingTime <= endTime;
+        });
+      }
+      break;
     case '7d':
       processedReadings = aggregateToHourlyAverages(readings);
       break;
@@ -121,7 +142,6 @@ export function transformToChartData(
       processedReadings = readings;
       break;
     default:
-      // 24h view uses raw 15-minute readings
       processedReadings = readings;
   }
 
@@ -181,38 +201,6 @@ export function calculateEnergyPerPeriod(readings: ChartReading[]): ChartDataPoi
   return result;
 }
 
-/**
- * Calculate overall average consumption from readings
- * Used to fill missing time periods
- */
-function calculateOverallAverageConsumption(readings: ChartReading[]): number {
-  if (readings.length === 0) return 0;
-
-  // Group by time periods and calculate average consumption per period
-  const dailyGroups: { [key: string]: ChartReading[] } = {};
-
-  readings.forEach((reading) => {
-    const date = parseTimestampFromDocId(reading.id);
-    const dayKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-    if (!dailyGroups[dayKey]) {
-      dailyGroups[dayKey] = [];
-    }
-    dailyGroups[dayKey].push(reading);
-  });
-
-  // Calculate consumption for each day
-  const consumptions: number[] = [];
-  Object.values(dailyGroups).forEach(group => {
-    if (group.length > 0) {
-      const sorted = group.sort((a, b) => a.id.localeCompare(b.id));
-      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
-      if (consumption > 0) consumptions.push(consumption);
-    }
-  });
-
-  if (consumptions.length === 0) return 0;
-  return consumptions.reduce((sum, c) => sum + c, 0) / consumptions.length;
-}
 
 /**
  * Aggregate energy readings into exactly 24 hourly consumption totals
@@ -292,6 +280,148 @@ export function aggregateEnergyByHour(readings: ChartReading[]): ChartDataPoint[
       });
     }
   }
+
+  return result;
+}
+
+/**
+ * Aggregate energy readings into 24 hourly consumption totals
+ * using a rolling 24-hour window from the latest data timestamp backwards
+ * Used for 24-hour rolling view
+ */
+export function aggregateEnergyByRollingHour(readings: ChartReading[]): ChartDataPoint[] {
+  if (readings.length === 0) {
+    // Return 24 empty hours with 0 consumption
+    const now = new Date();
+    return Array.from({ length: 24 }, (_, i) => {
+      const bucketTime = new Date(now);
+      bucketTime.setHours(bucketTime.getHours() - (23 - i));
+
+      return {
+        name: formatTimeForRollingWindow(bucketTime),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: 0,
+      };
+    });
+  }
+
+  // Find the latest timestamp from the readings
+  const sortedReadings = [...readings].sort((a, b) => b.id.localeCompare(a.id));
+  const latestReading = sortedReadings[0];
+  const endTime = parseTimestampFromDocId(latestReading.id);
+
+  // Calculate start time (24 hours before the latest data)
+  const startTime = new Date(endTime);
+  startTime.setHours(startTime.getHours() - 24);
+
+  // Filter readings to only those within the 24-hour window
+  const filteredReadings = readings.filter(reading => {
+    const readingTime = parseTimestampFromDocId(reading.id);
+    return readingTime >= startTime && readingTime <= endTime;
+  });
+
+  if (filteredReadings.length === 0) {
+    // No readings in the rolling window
+    return Array.from({ length: 24 }, (_, i) => {
+      const bucketTime = new Date(startTime);
+      bucketTime.setHours(bucketTime.getHours() + i);
+
+      return {
+        name: formatTimeForRollingWindow(bucketTime),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '',
+        energy: 0,
+      };
+    });
+  }
+
+  // Create 24 hourly buckets
+  const hourlyBuckets: Array<{
+    startTime: Date;
+    endTime: Date;
+    readings: ChartReading[];
+  }> = [];
+
+  for (let i = 0; i < 24; i++) {
+    const bucketStart = new Date(startTime);
+    bucketStart.setHours(bucketStart.getHours() + i);
+
+    const bucketEnd = new Date(bucketStart);
+    bucketEnd.setHours(bucketEnd.getHours() + 1);
+
+    hourlyBuckets.push({
+      startTime: bucketStart,
+      endTime: bucketEnd,
+      readings: [],
+    });
+  }
+
+  // Assign readings to buckets
+  filteredReadings.forEach(reading => {
+    const readingTime = parseTimestampFromDocId(reading.id);
+
+    // Find which bucket this reading belongs to
+    for (let i = 0; i < hourlyBuckets.length; i++) {
+      const bucket = hourlyBuckets[i];
+      if (readingTime >= bucket.startTime && readingTime < bucket.endTime) {
+        bucket.readings.push(reading);
+        break;
+      }
+    }
+  });
+
+  // Calculate overall average consumption as fallback
+  const overallAverage = calculateOverallAverageConsumption(filteredReadings);
+
+  // Generate chart data points
+  const result: ChartDataPoint[] = hourlyBuckets.map(bucket => {
+    if (bucket.readings.length > 0) {
+      // Sort by timestamp
+      const sorted = bucket.readings.sort((a, b) => a.id.localeCompare(b.id));
+
+      // Calculate consumption: last reading - first reading
+      const consumption = sorted[sorted.length - 1].energy - sorted[0].energy;
+
+      // Calculate averages for other metrics
+      const avgPower = bucket.readings.reduce((sum, r) => sum + r.power, 0) / bucket.readings.length;
+      const avgVoltage = bucket.readings.reduce((sum, r) => sum + r.voltage, 0) / bucket.readings.length;
+      const avgFrequency = bucket.readings.reduce((sum, r) => sum + r.frequency, 0) / bucket.readings.length;
+      const avgCurrent = bucket.readings.reduce((sum, r) => sum + r.current, 0) / bucket.readings.length;
+      const avgPowerFactor = bucket.readings.reduce((sum, r) => sum + r.power_factor, 0) / bucket.readings.length;
+
+      return {
+        name: formatTimeForRollingWindow(bucket.startTime),
+        power: avgPower,
+        voltage: avgVoltage,
+        frequency: avgFrequency,
+        current: avgCurrent,
+        powerFactor: avgPowerFactor,
+        timestamp: sorted[0].id, // First reading's ID for tooltip
+        energy: Math.max(0, consumption),
+      };
+    } else {
+      // No readings for this hour - use average
+      return {
+        name: formatTimeForRollingWindow(bucket.startTime),
+        power: 0,
+        voltage: 0,
+        frequency: 0,
+        current: 0,
+        powerFactor: 0,
+        timestamp: '', // No timestamp for estimated data
+        energy: overallAverage,
+      };
+    }
+  });
 
   return result;
 }

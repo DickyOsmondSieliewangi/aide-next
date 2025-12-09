@@ -31,11 +31,13 @@ import { useChartData } from '@/lib/hooks/use-chart-data';
 import {
   transformToChartData,
   aggregateEnergyByHour,
+  aggregateEnergyByRollingHour,
   aggregateEnergyByDay,
   aggregateEnergyByDayMonthly,
   aggregateEnergyByMonth,
 } from '@/lib/utils/chart-aggregation';
 import { getLatestReading } from '@/lib/utils/energy-calculator';
+import { parseTimestampFromDocId, formatFullDateTime } from '@/lib/utils/date-parser';
 
 interface AnalyticCardProps {
   device: Device;
@@ -126,7 +128,7 @@ export function AnalyticCard({
     if (currentGraph.id === 'energy') {
       switch (timeRange) {
         case '24h':
-          return aggregateEnergyByHour(data);
+          return aggregateEnergyByRollingHour(data);
         case '7d':
           return aggregateEnergyByDay(data);
         case '1m':
@@ -141,11 +143,25 @@ export function AnalyticCard({
     }
   }, [data, currentGraph.id, timeRange]);
 
-  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string }; value: number }> }) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; timestamp?: string }; value: number }> }) => {
     if (active && payload && payload.length) {
+      const dataPoint = payload[0].payload;
+
+      // Don't show tooltip for data points without timestamps (estimated/missing data)
+      if (!dataPoint.timestamp) {
+        return null;
+      }
+
+      // For 24h view with rolling window, format full datetime
+      let timeLabel = dataPoint.name;
+      if (timeRange === '24h' && dataPoint.timestamp) {
+        const date = parseTimestampFromDocId(dataPoint.timestamp);
+        timeLabel = formatFullDateTime(date);
+      }
+
       return (
         <div className="bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg border border-slate-600">
-          <p className="text-xs text-slate-300">{payload[0].payload.name}</p>
+          <p className="text-xs text-slate-300">{timeLabel}</p>
           <p className="text-sm font-semibold">
             {payload[0].value.toFixed(2)} {currentGraph.unit}
           </p>
@@ -234,8 +250,11 @@ export function AnalyticCard({
                 dataKey="name"
                 stroke="#64748b"
                 style={{ fontSize: '0.75rem' }}
-                interval="preserveStartEnd"
-                minTickGap={30}
+                interval={timeRange === '24h' ? 5 : 'preserveStartEnd'}
+                minTickGap={50}
+                angle={timeRange === '24h' ? -45 : 0}
+                textAnchor={timeRange === '24h' ? 'end' : 'middle'}
+                height={timeRange === '24h' ? 60 : 30}
               />
               <YAxis stroke="#64748b" width={45} style={{ fontSize: '0.75rem' }} />
               <Tooltip content={<CustomTooltip />} />
@@ -250,8 +269,11 @@ export function AnalyticCard({
                 dataKey="name"
                 stroke="#64748b"
                 style={{ fontSize: '0.75rem' }}
-                interval="preserveStartEnd"
-                minTickGap={30}
+                interval={timeRange === '24h' ? 5 : 'preserveStartEnd'}
+                minTickGap={50}
+                angle={timeRange === '24h' ? -45 : 0}
+                textAnchor={timeRange === '24h' ? 'end' : 'middle'}
+                height={timeRange === '24h' ? 60 : 30}
               />
               <YAxis stroke="#64748b" width={45} style={{ fontSize: '0.75rem' }} />
               <Tooltip content={<CustomTooltip />} />
